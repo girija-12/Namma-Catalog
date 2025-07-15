@@ -134,8 +134,7 @@ export function EnhancedProductForm({ onSuccess }: EnhancedProductFormProps) {
 
     try {
       const suggestedCategory = await suggestCategory({
-        productName: formData.name,
-        description: formData.description || undefined,
+        productName: formData.name
       });
 
       const newData = { ...formData, category: suggestedCategory || "General" };

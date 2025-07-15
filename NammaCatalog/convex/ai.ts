@@ -2,9 +2,66 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 
 const openai = {
-  baseURL: process.env.CONVEX_OPENAI_BASE_URL,
-  apiKey: process.env.CONVEX_OPENAI_API_KEY,
+  baseURL: "https://api.openai.com/v1",
+  apiKey: "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"
 };
+
+export const suggestCategory = action({
+  args: { productName: v.string() },
+  handler: async (ctx, { productName }) => {
+    const prompt = `You are a helpful assistant that suggests the best product category for the given product name. Provide only one category name that fits best.
+
+Product Name: "${productName}"
+
+Category:`;
+console.log("API KEY:", openai.apiKey);
+    try {
+      const response = await fetch(`${openai.baseURL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${openai.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-nano",
+          messages: [
+            {
+              role: "system",
+              content: "You are an expert product categorization assistant for the Indian market.",
+            },
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
+          max_tokens: 20,
+          temperature: 0.3,
+        }),
+      });
+
+      const rawText = await response.text();
+      console.log("OpenAI raw response:", rawText);
+
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response from OpenAI: ${rawText}`);
+      }
+
+      const category = data.choices?.[0]?.message?.content?.trim();
+
+      if (!category) {
+        throw new Error("No category returned from OpenAI.");
+      }
+
+      return category;
+    } catch (error) {
+      console.error("Failed to generate category:", error);
+      return "General";
+    }
+  },
+});
 
 export const generateDescription = action({
   args: {
@@ -16,68 +73,109 @@ export const generateDescription = action({
     quantity: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { productName, category, price, language = "en", additionalInfo, quantity } = args;
+    const {
+      productName,
+      category,
+      price,
+      language = "en",
+      additionalInfo,
+      quantity,
+    } = args;
 
-    // Enhanced prompts for different languages with detailed, customized descriptions
-    const prompts = {
-      ta: `நீங்கள் ஒரு தமிழ் தயாரிப்பு விளக்க நிபுணர். "${productName}" என்ற தயாரிப்புக்கு மிகவும் விரிவான, கவர்ச்சிகரமான மற்றும் தனித்துவமான விளக்கம் எழுதுங்கள்.
+    const prompt = {
+      en: `You are a creative product marketing expert writing for the Indian market.
+Generate a unique, emotionally engaging, and highly detailed product description in 150-200 words.
 
-தயாரிப்பு: ${productName}
-${category ? `வகை: ${category}` : ''}
-${price ? `விலை: ₹${price}` : ''}
-${quantity ? `அளவு: ${quantity}` : ''}
-${additionalInfo ? `கூடுதல் தகவல்: ${additionalInfo}` : ''}
+Product Details:
+- Name: ${productName}
+${category ? `- Category: ${category}` : ""}
+${price ? `- Price: ₹${price}` : ""}
+${quantity ? `- Quantity: ${quantity}` : ""}
+${additionalInfo ? `- Voice Description: ${additionalInfo}` : ""}
 
-விளக்கத்தில் இவை இருக்க வேண்டும்:
-1. தயாரிப்பின் தனித்துவமான அம்சங்கள்
-2. பயன்பாடுகள் மற்றும் நன்மைகள்
-3. தரம் மற்றும் நம்பகத்தன்மை
-4. வாடிக்கையாளர்களுக்கு ஏன் இது சிறந்த தேர்வு
-5. உணர்ச்சிபூர்வமான இணைப்பு
+Instructions:
+- Use the voice input to understand the user's perspective and emotional tone.
+- Highlight key features, benefits, use cases, and value.
+- Make the description feel personalized and story-driven.
+- Ensure it's compelling and fits well with the product's category.
+- Avoid repeating generic lines.
+`,
 
-150-200 வார்த்தைகளில் எழுதுங்கள். மிகவும் விரிவான மற்றும் கவர்ச்சிகரமான விளக்கம் கொடுங்கள்.`,
+      ta: `நீங்கள் இந்திய சந்தைக்கான ஒரு திறமையான தயாரிப்பு விளக்கம் எழுதும் நிபுணர்.
 
-      en: `You are an expert product description writer specializing in Indian market products. Create a highly detailed, engaging, and unique description for "${productName}".
+தயாரிப்புக்கான தனிப்பட்ட, உணர்ச்சிபூர்வமான மற்றும் விரிவான விளக்கத்தை 150-200 வார்த்தைகளில் உருவாக்கவும்.
 
-Product: ${productName}
-${category ? `Category: ${category}` : ''}
-${price ? `Price: ₹${price}` : ''}
-${quantity ? `Quantity: ${quantity}` : ''}
-${additionalInfo ? `Additional Info: ${additionalInfo}` : ''}
+தயாரிப்பு விவரங்கள்:
+- பெயர்: ${productName}
+${category ? `- வகை: ${category}` : ""}
+${price ? `- விலை: ₹${price}` : ""}
+${quantity ? `- அளவு: ${quantity}` : ""}
+${additionalInfo ? `- குரல் விளக்கம்: ${additionalInfo}` : ""}
 
-The description should include:
-1. Unique selling points and standout features
-2. Practical uses and benefits for Indian consumers
-3. Quality assurance and reliability factors
-4. Why this is the best choice for customers
-5. Emotional connection and lifestyle benefits
-6. Value proposition considering the price point
+விளக்கத்தில்:
+- தயாரிப்பின் முக்கிய அம்சங்கள் மற்றும் பயன்கள்
+- பயனுள்ள பயன்பாடுகள்
+- வாடிக்கையாளர்களுக்கான மதிப்பு
+- உணர்ச்சி மற்றும் அனுபவங்கள்
+- புது பார்வையுடன் எழுதவும், பொதுவான வார்த்தைகளை தவிர்க்கவும்.
+`,
 
-Write 150-200 words. Make it compelling, detailed, and market-specific. Avoid generic descriptions.`,
+      hi: `आप भारतीय बाज़ार के लिए लिखने वाले एक रचनात्मक उत्पाद विवरण विशेषज्ञ हैं।
 
-      hi: `आप एक हिंदी उत्पाद विवरण विशेषज्ञ हैं। "${productName}" के लिए एक अत्यधिक विस्तृत, आकर्षक और अनूठा विवरण लिखें।
+"${productName}" के लिए एक अनोखा, भावनात्मक रूप से जुड़ाव वाला और विस्तृत विवरण 150-200 शब्दों में तैयार करें।
 
-उत्पाद: ${productName}
-${category ? `श्रेणी: ${category}` : ''}
-${price ? `कीमत: ₹${price}` : ''}
-${quantity ? `मात्रा: ${quantity}` : ''}
-${additionalInfo ? `अतिरिक्त जानकारी: ${additionalInfo}` : ''}
+उत्पाद विवरण:
+- नाम: ${productName}
+${category ? `- श्रेणी: ${category}` : ""}
+${price ? `- कीमत: ₹${price}` : ""}
+${quantity ? `- मात्रा: ${quantity}` : ""}
+${additionalInfo ? `- वॉइस विवरण: ${additionalInfo}` : ""}
 
-विवरण में ये होना चाहिए:
-1. उत्पाद की विशेष विशेषताएं
-2. उपयोग और लाभ
-3. गुणवत्ता और विश्वसनीयता
-4. ग्राहकों के लिए यह क्यों सबसे अच्छा विकल्प है
-5. भावनात्मक जुड़ाव
-
-150-200 शब्दों में लिखें। बहुत विस्तृत और आकर्षक विवरण दें।`
+निर्देश:
+- मुख्य विशेषताएं और उपयोग के तरीके बताएं
+- उपभोक्ताओं को जोड़ने वाला टोन रखें
+- उत्पाद को श्रेणी से मेल खाते हुए प्रस्तुत करें
+- सामान्य या दोहराए गए शब्दों से बचें
+`,
     };
 
-    try {
+    const fallbackPrompt = {
+      en: `Write a short but unique and market-friendly product description.
+
+Product: ${productName}
+${category ? `Category: ${category}` : ""}
+
+It should:
+- Highlight key features or use cases
+- Sound engaging and relevant for Indian customers
+- Be around 80-120 words
+- Avoid generic fluff`,
+
+      ta: `இந்த தயாரிப்பு: "${productName}" பற்றிய சுருக்கமான, ஆனால் தனித்துவமான விளக்கத்தை எழுதுங்கள்.
+
+${category ? `வகை: ${category}` : ""}
+
+- முக்கிய அம்சங்கள் மற்றும் பயன்பாடுகளை குறிப்பிட்டு எழுதவும்
+- இந்திய வாடிக்கையாளர்களுக்கு பொருத்தமானதாக இருக்க வேண்டும்
+- சுமார் 80-120 வார்த்தைகளாக இருக்கலாம்
+- பொதுவான மற்றும் அழுக்கான வரிகளை தவிர்க்கவும்`,
+
+      hi: `"${productName}" उत्पाद के लिए एक छोटा लेकिन अनूठा और प्रभावी विवरण लिखिए।
+
+${category ? `श्रेणी: ${category}` : ""}
+
+इसमें:
+- मुख्य विशेषताएं और उपयोग शामिल हों
+- भारतीय ग्राहकों के लिए प्रासंगिक और आकर्षक हो
+- लगभग 80-120 शब्दों में हो
+- सामान्य और घिसे-पिटे शब्दों से बचें`,
+    };
+
+    const callOpenAI = async (promptText: string) => {
       const response = await fetch(`${openai.baseURL}/chat/completions`, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${openai.apiKey}`,
+          Authorization: `Bearer ${openai.apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -85,83 +183,40 @@ ${additionalInfo ? `अतिरिक्त जानकारी: ${additional
           messages: [
             {
               role: "system",
-              content: "You are an expert product description writer who creates compelling, detailed, and market-specific product descriptions."
+              content: `You are an expert Indian-market product description writer.`,
             },
             {
               role: "user",
-              content: prompts[language as keyof typeof prompts] || prompts.en
-            }
+              content: promptText,
+            },
           ],
           max_tokens: 300,
-          temperature: 0.8,
+          temperature: 0.85,
         }),
       });
 
       const data = await response.json();
-      return data.choices[0].message.content.trim();
-    } catch (error) {
-      console.error("Failed to generate description:", error);
-      
-      // Enhanced fallback descriptions
-      const fallbacks = {
-        ta: `${productName} - இது ஒரு உயர்தர ${category || 'தயாரிப்பு'} ஆகும். சிறந்த தரம், நம்பகமான செயல்பாடு மற்றும் போட்டியான விலையில் கிடைக்கிறது. தினசரி பயன்பாட்டிற்கு ஏற்றது மற்றும் நீண்ட காலம் நீடிக்கும். ${price ? `₹${price} என்ற நியாயமான விலையில்` : ''} உங்கள் தேவைகளை பூர்த்தி செய்யும் சிறந்த தேர்வு.`,
-        en: `${productName} - A premium quality ${category || 'product'} designed for the Indian market. Features excellent build quality, reliable performance, and competitive pricing. Perfect for daily use with long-lasting durability. ${price ? `Priced at ₹${price}` : ''} this represents excellent value for money and meets all your requirements.`,
-        hi: `${productName} - एक उच्च गुणवत्ता वाला ${category || 'उत्पाद'} जो भारतीय बाजार के लिए डिज़ाइन किया गया है। बेहतरीन निर्माण गुणवत्ता, विश्वसनीय प्रदर्शन और प्रतिस्पर्धी मूल्य निर्धारण। ${price ? `₹${price} की कीमत पर` : ''} यह पैसे की उत्कृष्ट वैल्यू प्रदान करता है।`
-      };
-      
-      return fallbacks[language as keyof typeof fallbacks] || fallbacks.en;
-    }
-  },
-});
-
-export const suggestCategory = action({
-  args: {
-    productName: v.string(),
-    description: v.optional(v.string()),
-    language: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { productName, description, language = "en" } = args;
-
-    // Enhanced category mapping with more specific categories
-    const categoryMappings = {
-      ta: {
-        'உடை மற்றும் ஃபேஷன்': ['சட்டை', 'பேன்ட்', 'ட்ரெஸ்', 'ஜாக்கெட்', 'ஷூ', 'பேக்', 'ஜீன்ஸ்', 'டாப்', 'பாவாடை', 'சேலை', 'குர்தா', 'லெகிங்ஸ்', 'பிளவுஸ்'],
-        'எலெக்ட்ரானிக்ஸ் மற்றும் கேஜெட்ஸ்': ['போன்', 'லேப்டாப்', 'டேப்லெட்', 'ஹெட்போன்', 'சார்ஜர்', 'கேபிள்', 'மொபைல்', 'கம்ப்யூட்டர்', 'ஸ்பீக்கர்', 'வாட்ச்', 'கேமரா'],
-        'உணவு மற்றும் பானங்கள்': ['அரிசி', 'கோதுமை', 'பருப்பு', 'மாவு', 'எண்ணெய்', 'சீனி', 'உப்பு', 'டீ', 'காபி', 'மசாலா', 'காய்கறி', 'பழம்'],
-        'வீட்டு உபயோகப் பொருட்கள்': ['ஃபர்னிச்சர்', 'அலங்காரம்', 'செடி', 'கருவி', 'சுத்தம்', 'நாற்காலி', 'மேசை', 'விளக்கு', 'கர்ட்டன்', 'பாத்திரம்'],
-        'ஆரோக்கியம் மற்றும் அழகு': ['மருந்து', 'க்ரீம்', 'ஷாம்பு', 'சோப்', 'வைட்டமின்', 'லோஷன்', 'பர்ஃப்யூம்', 'மேக்கப்', 'ஹேர் ஆயில்'],
-        'விளையாட்டு மற்றும் ஃபிட்னெஸ்': ['பந்து', 'பேட்', 'ராக்கெட்', 'ஷூஸ்', 'உபகரணம்', 'ஃபிட்னெஸ்', 'ஜிம்', 'யோகா', 'டம்பெல்'],
-        'புத்தகங்கள் மற்றும் ஸ்டேஷனரி': ['புத்தகம்', 'பத்திரிகை', 'நாவல்', 'பாடப்புத்தகம்', 'பேனா', 'பென்சில்', 'நோட்புக்'],
-        'பொம்மைகள் மற்றும் விளையாட்டுகள்': ['பொம்மை', 'விளையாட்டு', 'புஸ்ஸல்', 'டால்', 'கார்', 'போர்ட் கேம்', 'வீடியோ கேம்'],
-        'வாகன பாகங்கள்': ['கார்', 'பைக்', 'மோட்டார் சைக்கிள்', 'டயர்', 'என்ஜின்', 'பாகங்கள்', 'ஆக்சஸரிஸ்']
-      },
-      en: {
-        'Clothing & Fashion': ['shirt', 'pant', 'dress', 'jacket', 'shoes', 'bag', 'jeans', 'top', 'skirt', 'saree', 'kurta', 'leggings', 'blouse', 'ethnic wear'],
-        'Electronics & Gadgets': ['phone', 'laptop', 'tablet', 'headphone', 'charger', 'cable', 'mobile', 'computer', 'speaker', 'watch', 'camera', 'smartphone'],
-        'Food & Beverages': ['rice', 'wheat', 'dal', 'flour', 'oil', 'sugar', 'salt', 'tea', 'coffee', 'spice', 'masala', 'vegetable', 'fruit', 'grocery'],
-        'Home & Kitchen': ['furniture', 'decoration', 'plant', 'tool', 'cleaning', 'chair', 'table', 'lamp', 'curtain', 'utensil', 'appliance'],
-        'Health & Beauty': ['medicine', 'cream', 'shampoo', 'soap', 'vitamin', 'lotion', 'perfume', 'makeup', 'skincare', 'hair oil'],
-        'Sports & Fitness': ['ball', 'bat', 'racket', 'shoes', 'equipment', 'fitness', 'gym', 'yoga', 'dumbbell', 'exercise'],
-        'Books & Stationery': ['book', 'magazine', 'novel', 'textbook', 'pen', 'pencil', 'notebook', 'diary', 'stationery'],
-        'Toys & Games': ['toy', 'game', 'puzzle', 'doll', 'car', 'board game', 'video game', 'educational toy'],
-        'Automotive': ['car', 'bike', 'motorcycle', 'tire', 'engine', 'parts', 'accessories', 'vehicle']
-      }
+      return data.choices?.[0]?.message?.content?.trim();
     };
 
-    const currentMappings = categoryMappings[language as keyof typeof categoryMappings] || categoryMappings.en;
-    const text = `${productName} ${description || ''}`.toLowerCase();
+    try {
+      const mainPrompt = prompt[language as keyof typeof prompt] || prompt.en;
+      const content = await callOpenAI(mainPrompt);
+      if (content) return content;
 
-    // Find best matching category
-    for (const [category, keywords] of Object.entries(currentMappings)) {
-      for (const keyword of keywords) {
-        if (text.includes(keyword.toLowerCase())) {
-          return category;
-        }
+      throw new Error("Primary generation failed, falling back");
+    } catch (error) {
+      console.error("Primary generation failed:", error);
+
+      try {
+        const fallback = fallbackPrompt[language as keyof typeof fallbackPrompt] || fallbackPrompt.en;
+        const fallbackContent = await callOpenAI(fallback);
+        return fallbackContent || `A high-quality ${category || 'product'} designed to meet your everyday needs. Reliable, efficient, and perfect for Indian customers.`;
+      } catch (fallbackError) {
+        console.error("Fallback generation failed:", fallbackError);
+        return `A high-quality ${category || 'product'} designed to meet your everyday needs. Reliable, efficient, and perfect for Indian customers.`;
       }
     }
-
-    return language === 'ta' ? 'பொது' : 'General';
   },
 });
 
@@ -245,14 +300,14 @@ Provide only a comma-separated list:`,
       return tagsString.split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag.length > 0);
     } catch (error) {
       console.error("Failed to generate tags:", error);
-      
+
       // Enhanced fallback tags
       const fallbackTags = {
         ta: ['தரமான', 'நம்பகமான', 'மலிவு', 'சிறந்த', 'பயனுள்ள', 'நீடித்த', 'பிரபலமான', 'பரிந்துரைக்கப்பட்ட'],
         en: ['quality', 'reliable', 'affordable', 'best', 'useful', 'durable', 'popular', 'recommended', 'premium', 'value'],
         hi: ['गुणवत्ता', 'विश्वसनीय', 'किफायती', 'सर्वोत्तम', 'उपयोगी', 'टिकाऊ', 'लोकप्रिय', 'अनुशंसित']
       };
-      
+
       return fallbackTags[language as keyof typeof fallbackTags] || fallbackTags.en;
     }
   },
