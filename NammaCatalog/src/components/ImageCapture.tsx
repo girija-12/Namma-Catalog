@@ -4,6 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { useLanguage } from "../contexts/LanguageContext";
 import { toast } from "sonner";
 import Webcam from "react-webcam";
+import { createWorker } from 'tesseract.js';
 
 interface ImageCaptureProps {
   onImageCaptured: (imageId: string, extractedData?: any) => void;
@@ -14,13 +15,13 @@ export function ImageCapture({ onImageCaptured, onClose }: ImageCaptureProps) {
   const [mode, setMode] = useState<"camera" | "upload">("camera");
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const { t } = useLanguage();
+  const [ocrProgress, setOcrProgress] = useState("");
+  const { t, language } = useLanguage();
   
   const webcamRef = useRef<Webcam>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   const generateUploadUrl = useMutation(api.products.generateUploadUrl);
-  const extractTextFromImage = useAction(api.ai.extractTextFromImage);
   const generateDescription = useAction(api.ai.generateDescription);
   const suggestCategory = useAction(api.ai.suggestCategory);
 
@@ -39,6 +40,35 @@ export function ImageCapture({ onImageCaptured, onClose }: ImageCaptureProps) {
         setCapturedImage(e.target?.result as string);
       };
       reader.readAsDataURL(file);
+    }
+  };
+
+  const performOCR = async (imageData: string) => {
+    setOcrProgress(t("image.ocr_initializing"));
+    
+    const worker = await createWorker('eng+hin+tam', 1, {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          setOcrProgress(`${t("image.ocr_processing")} ${Math.round(m.progress * 100)}%`);
+        } else if (m.status === 'loading tesseract core') {
+          setOcrProgress(t("image.ocr_loading"));
+        } else if (m.status === 'initializing tesseract') {
+          setOcrProgress(t("image.ocr_initializing"));
+        }
+      }
+    });
+
+    try {
+      setOcrProgress(t("image.extracting_text"));
+      const { data: { text, confidence } } = await worker.recognize(imageData);
+      await worker.terminate();
+      setOcrProgress(t("image.ocr_complete"));
+      const cleanedText = text.replace(/\n+/g, ' ').replace(/\s+/g, ' ').trim();
+      return { text: cleanedText, confidence };
+    } catch (error) {
+      await worker.terminate();
+      setOcrProgress("");
+      throw error;
     }
   };
 
@@ -65,19 +95,18 @@ export function ImageCapture({ onImageCaptured, onClose }: ImageCaptureProps) {
 
       const { storageId } = await uploadResult.json();
       
-      // Get the image URL for processing
-      // Note: In production, you would use the actual image processing APIs
-      // For demo purposes, we'll simulate OCR extraction
-      const mockExtractedData = {
-        productName: "Cotton T-Shirt",
-        price: "599",
-        category: "Clothing & Fashion",
-        description: "Comfortable cotton t-shirt with modern fit",
-        detectedText: "100% Cotton, Size M, Made in India"
-      };
+      // Perform OCR on the image
+      const ocrResult = await performOCR(capturedImage);
+      
+      // Extract product information from OCR text
+      const extractedData = await extractProductInfo(ocrResult.text);
 
       toast.success(t("msg.image_processed"));
-      onImageCaptured(storageId, mockExtractedData);
+      onImageCaptured(storageId, {
+        ...extractedData,
+        detectedText: ocrResult.text,
+        confidence: ocrResult.confidence
+      });
       
     } catch (error) {
       console.error("Image processing failed:", error);
@@ -87,8 +116,25 @@ export function ImageCapture({ onImageCaptured, onClose }: ImageCaptureProps) {
     }
   };
 
+  const extractProductInfo = async (ocrText: string) => {
+    if (!ocrText) return { productName: "Unknown Product", price: "", category: "General", description: "No text detected" };
+    const priceMatch = ocrText.match(/(\d+)/);
+    const extractedPrice = priceMatch ? priceMatch[1] : "";
+    const words = ocrText.split(/\s+/).filter(w => w.length > 2 && !/^\d+$/.test(w)).slice(0, 3);
+    const productName = words.join(' ') || "Product from Image";
+    let category = "General", description = `Product from image: ${ocrText.substring(0, 100)}...`;
+    try {
+      [category, description] = await Promise.all([
+        suggestCategory({ productName, description: ocrText, language }),
+        generateDescription({ productName, additionalInfo: ocrText, language })
+      ]);
+    } catch (e) { console.error("AI failed:", e); }
+    return { productName, price: extractedPrice, category, description };
+  };
+
   const retakePhoto = () => {
     setCapturedImage(null);
+    setOcrProgress("");
   };
 
   return (
@@ -225,7 +271,9 @@ export function ImageCapture({ onImageCaptured, onClose }: ImageCaptureProps) {
               <div className="bg-blue-50 p-4 rounded-lg">
                 <div className="flex items-center gap-3 mb-2">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                  <span className="font-medium text-blue-900">{t("image.ai_processing")}</span>
+                  <span className="font-medium text-blue-900">
+                    {ocrProgress || t("image.ai_processing")}
+                  </span>
                 </div>
                 <ul className="text-sm text-blue-700 space-y-1">
                   <li>• {t("image.extracting_text")}</li>

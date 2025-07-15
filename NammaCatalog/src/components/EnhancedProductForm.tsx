@@ -133,12 +133,12 @@ export function EnhancedProductForm({ onSuccess }: EnhancedProductFormProps) {
     }
 
     try {
-      const category = await suggestCategory({
+      const suggestedCategory = await suggestCategory({
         productName: formData.name,
         description: formData.description || undefined,
       });
 
-      const newData = { ...formData, category };
+      const newData = { ...formData, category: suggestedCategory || "General" };
       setFormData(newData);
       updateCompletionStatus(newData);
       toast.success(t("msg.category_suggested"));

@@ -69,12 +69,17 @@ function AppContent() {
             </div>
             <div className="flex items-center space-x-4">
               {/* Language Toggle */}
-              <button
-                onClick={() => setLanguage(language === "ta" ? "en" : "ta")}
-                className="px-3 py-1 bg-gray-100 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
-              >
-                {language === "ta" ? "EN" : "தமிழ்"}
-              </button>
+              <div className="relative">
+                <select
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value as any)}
+                  className="px-3 py-1 bg-gray-100 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors border-none outline-none"
+                >
+                  <option value="en">🇺🇸 EN</option>
+                  <option value="ta">🇮🇳 தமிழ்</option>
+                  <option value="hi">🇮🇳 हिंदी</option>
+                </select>
+              </div>
               <Authenticated>
                 <NotificationCenter />
               </Authenticated>

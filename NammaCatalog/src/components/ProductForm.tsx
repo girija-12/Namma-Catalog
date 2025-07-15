@@ -72,12 +72,12 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
     }
 
     try {
-      const category = await suggestCategory({
+      const suggestedCategory = await suggestCategory({
         productName: formData.name,
         description: formData.description || undefined,
       });
 
-      setFormData(prev => ({ ...prev, category }));
+      setFormData(prev => ({ ...prev, category: suggestedCategory || "General" }));
       toast.success(t("msg.category_suggested"));
     } catch (error) {
       toast.error(t("msg.failed_suggest_category"));
