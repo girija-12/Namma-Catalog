@@ -11,11 +11,11 @@ interface LanguageContextType {
 const translations = {
   en: {
     // App
-    "app.title": "Smart Inventory",
+    "app.title": "Namma Catalog",
     
     // Auth
-    "auth.title": "Smart Inventory",
-    "auth.subtitle": "AI-Powered Inventory Management",
+    "auth.title": "Namma Catalog",
+    "auth.subtitle": "AI-Powered Catalog Management",
     "auth.features": "Voice Input • Multi-language • Real-time",
     
     // Navigation
@@ -27,7 +27,7 @@ const translations = {
     "nav.settings": "Settings",
     
     // Dashboard
-    "dashboard.welcome": "Welcome to Your Smart Inventory",
+    "dashboard.title": "Welcome to Namma Catalog",
     "dashboard.subtitle": "Manage your products with AI-powered tools",
     "dashboard.ai_powered": "AI Powered",
     "dashboard.voice_enabled": "Voice Enabled",
@@ -200,10 +200,10 @@ const translations = {
   },
   ta: {
     // App
-    "app.title": "ஸ்மார்ட் இன்வென்டரி",
+    "app.title": "நம்ம கேடலாக்",
     
     // Auth
-    "auth.title": "ஸ்மார்ட் இன்வென்டரி",
+    "auth.title": "நம்ம கேடலாக்",
     "auth.subtitle": "AI-இயங்கும் இன்வென்டரி மேலாண்மை",
     "auth.features": "குரல் உள்ளீடு • பல மொழி • நேரடி",
     
@@ -216,7 +216,7 @@ const translations = {
     "nav.settings": "அமைப்புகள்",
     
     // Dashboard
-    "dashboard.welcome": "உங்கள் ஸ்மார்ட் இன்வென்டரிக்கு வரவேற்கிறோம்",
+    "dashboard.title": "உங்கள் ஸ்மார்ட் இன்வென்டரிக்கு வரவேற்கிறோம்",
     "dashboard.subtitle": "AI-இயங்கும் கருவிகளுடன் உங்கள் தயாரிப்புகளை நிர்வகிக்கவும்",
     "dashboard.ai_powered": "AI இயங்கும்",
     "dashboard.voice_enabled": "குரல் இயக்கப்பட்டது",
@@ -389,10 +389,10 @@ const translations = {
   },
   hi: {
     // App
-    "app.title": "स्मार्ट इन्वेंटरी",
+    "app.title": "नम्म कैटलॉग",
     
     // Auth
-    "auth.title": "स्मार्ट इन्वेंटरी",
+    "auth.title": "नम्म कैटलॉग",
     "auth.subtitle": "AI-संचालित इन्वेंटरी प्रबंधन",
     "auth.features": "आवाज इनपुट • बहुभाषी • रीयल-टाइम",
     

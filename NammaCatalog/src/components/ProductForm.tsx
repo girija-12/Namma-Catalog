@@ -1,3 +1,4 @@
+// ProductForm.tsx (Full AI-integrated version with UI and form filled in)
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -6,6 +7,28 @@ import { toast } from "sonner";
 
 interface ProductFormProps {
   onSuccess: () => void;
+}
+
+const HF_MODEL_URL = "/api/hf/models/google/vit-base-patch16-224";
+const HF_API_KEY = "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"; // Replace with your key or proxy it
+
+async function classifyImage(blob: Blob): Promise<string | null> {
+  try {
+    const response = await fetch(HF_MODEL_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${HF_API_KEY}`,
+        "Content-Type": "application/octet-stream",
+      },
+      body: blob,
+    });
+
+    const result = await response.json();
+    return result?.[0]?.label || null;
+  } catch (err) {
+    console.error("Classification failed", err);
+    return null;
+  }
 }
 
 export function ProductForm({ onSuccess }: ProductFormProps) {
@@ -33,42 +56,48 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
   const generateTags = useAction(api.ai.generateTags);
 
   const handleInputChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const predictFromBlob = async (blob: Blob) => {
+    const label = await classifyImage(blob);
+    if (label) {
+      setFormData((prev) => ({
+        ...prev,
+        name: label,
+        category: label,
+        description: `A product categorized as ${label}.`,
+      }));
+    }
+  };
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setImageFile(file);
       setCapturedPhoto(null);
-      // Stop camera feed if image selected
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
         setStream(null);
       }
+      await predictFromBlob(file);
     }
   };
-
-  // After your existing states and refs:
 
   useEffect(() => {
     if (stream && videoRef.current) {
       videoRef.current.srcObject = stream;
-      videoRef.current.play().catch((e) => {
-        console.warn("Video play failed", e);
-      });
+      videoRef.current.play().catch(console.warn);
     } else if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
   }, [stream]);
 
   const startCamera = async () => {
-    if (stream) return; // Already streaming
+    if (stream) return;
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
@@ -85,36 +114,30 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
     }
-    // Clear video source so it doesn't show black screen
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (videoRef.current) videoRef.current.srcObject = null;
   };
 
-
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
-
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL("image/jpeg");
     setCapturedPhoto(dataUrl);
     setImageFile(null);
     stopStream();
+
+    const blob = await (await fetch(dataUrl)).blob();
+    await predictFromBlob(blob);
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
+      if (stream) stream.getTracks().forEach((track) => track.stop());
     };
   }, [stream]);
 
@@ -135,7 +158,7 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
 
       setFormData((prev) => ({ ...prev, description }));
       toast.success(t("msg.description_generated"));
-    } catch (error) {
+    } catch {
       toast.error(t("msg.failed_generate_description"));
     } finally {
       setIsGeneratingDescription(false);
@@ -149,16 +172,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
     }
 
     try {
-      const suggestedCategory = await suggestCategory({
-        productName: formData.name,
-      });
-
-      setFormData((prev) => ({
-        ...prev,
-        category: suggestedCategory || "General",
-      }));
+      const category = await suggestCategory({ productName: formData.name });
+      setFormData((prev) => ({ ...prev, category: category || "General" }));
       toast.success(t("msg.category_suggested"));
-    } catch (error) {
+    } catch {
       toast.error(t("msg.failed_suggest_category"));
     }
   };
@@ -166,12 +183,7 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (
-      !formData.name.trim() ||
-      !formData.description.trim() ||
-      !formData.price ||
-      !formData.category
-    ) {
+    if (!formData.name || !formData.description || !formData.price || !formData.category) {
       toast.error(t("msg.fill_required_fields"));
       return;
     }
@@ -180,15 +192,12 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
     try {
       let imageId;
 
-      // Upload image if capturedPhoto or imageFile provided
       if (capturedPhoto || imageFile) {
         const uploadUrl = await generateUploadUrl();
-
         let blob: Blob;
+
         if (capturedPhoto) {
-          // Convert base64 data URL to Blob
-          const res = await fetch(capturedPhoto);
-          blob = await res.blob();
+          blob = await (await fetch(capturedPhoto)).blob();
         } else {
           blob = imageFile!;
         }
@@ -199,38 +208,30 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
           body: blob,
         });
 
-        if (!result.ok) {
-          throw new Error("Failed to upload image");
-        }
-
+        if (!result.ok) throw new Error("Upload failed");
         const { storageId } = await result.json();
         imageId = storageId;
       }
 
-      // Generate tags
       const tags = await generateTags({
         productName: formData.name,
         description: formData.description,
         category: formData.category,
       });
 
-      // Create product
       await createProduct({
-        name: formData.name.trim(),
-        description: formData.description.trim(),
+        ...formData,
         price: parseFloat(formData.price),
-        category: formData.category,
         stockLevel: parseInt(formData.stockLevel) || 0,
         minStockLevel: parseInt(formData.minStockLevel) || 5,
         imageId,
         tags,
-        language: formData.language,
         aiGenerated: true,
       });
 
       toast.success(t("msg.product_created"));
       onSuccess();
-    } catch (error) {
+    } catch {
       toast.error(t("msg.failed_create_product"));
     } finally {
       setIsLoading(false);

@@ -40,4 +40,14 @@ window.addEventListener('message', async (message) => {
       "@": path.resolve(__dirname, "./src"),
     },
   },
+    server: {
+    proxy: {
+      "/api/hf": {
+        target: "https://api-inference.huggingface.co",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/hf/, ""),
+      },
+    },
+  },
+
 }));
