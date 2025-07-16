@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useLanguage } from "../contexts/LanguageContext";
@@ -20,8 +20,11 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
     language: language,
   });
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   const createProduct = useMutation(api.products.create);
   const generateUploadUrl = useMutation(api.products.generateUploadUrl);
@@ -29,17 +32,91 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
   const suggestCategory = useAction(api.ai.suggestCategory);
   const generateTags = useAction(api.ai.generateTags);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleInputChange = (
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
+  ) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setImageFile(file);
+      setCapturedPhoto(null);
+      // Stop camera feed if image selected
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        setStream(null);
+      }
     }
   };
+
+  // After your existing states and refs:
+
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch((e) => {
+        console.warn("Video play failed", e);
+      });
+    } else if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, [stream]);
+
+  const startCamera = async () => {
+    if (stream) return; // Already streaming
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      setStream(mediaStream);
+    } catch {
+      toast.error(t("msg.camera_access_denied"));
+    }
+  };
+
+  const stopStream = () => {
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      setStream(null);
+    }
+    // Clear video source so it doesn't show black screen
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg");
+    setCapturedPhoto(dataUrl);
+    setImageFile(null);
+    stopStream();
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, [stream]);
 
   const handleGenerateDescription = async () => {
     if (!formData.name.trim()) {
@@ -56,7 +133,7 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
         language: formData.language,
       });
 
-      setFormData(prev => ({ ...prev, description }));
+      setFormData((prev) => ({ ...prev, description }));
       toast.success(t("msg.description_generated"));
     } catch (error) {
       toast.error(t("msg.failed_generate_description"));
@@ -74,10 +151,12 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
     try {
       const suggestedCategory = await suggestCategory({
         productName: formData.name,
-        description: formData.description || undefined,
       });
 
-      setFormData(prev => ({ ...prev, category: suggestedCategory || "General" }));
+      setFormData((prev) => ({
+        ...prev,
+        category: suggestedCategory || "General",
+      }));
       toast.success(t("msg.category_suggested"));
     } catch (error) {
       toast.error(t("msg.failed_suggest_category"));
@@ -86,8 +165,13 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!formData.name.trim() || !formData.description.trim() || !formData.price || !formData.category) {
+
+    if (
+      !formData.name.trim() ||
+      !formData.description.trim() ||
+      !formData.price ||
+      !formData.category
+    ) {
       toast.error(t("msg.fill_required_fields"));
       return;
     }
@@ -95,20 +179,30 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
     setIsLoading(true);
     try {
       let imageId;
-      
-      // Upload image if provided
-      if (imageFile) {
+
+      // Upload image if capturedPhoto or imageFile provided
+      if (capturedPhoto || imageFile) {
         const uploadUrl = await generateUploadUrl();
+
+        let blob: Blob;
+        if (capturedPhoto) {
+          // Convert base64 data URL to Blob
+          const res = await fetch(capturedPhoto);
+          blob = await res.blob();
+        } else {
+          blob = imageFile!;
+        }
+
         const result = await fetch(uploadUrl, {
           method: "POST",
-          headers: { "Content-Type": imageFile.type },
-          body: imageFile,
+          headers: { "Content-Type": blob.type },
+          body: blob,
         });
-        
+
         if (!result.ok) {
           throw new Error("Failed to upload image");
         }
-        
+
         const { storageId } = await result.json();
         imageId = storageId;
       }
@@ -146,12 +240,17 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
   return (
     <div className="max-w-2xl mx-auto">
       <div className="bg-white rounded-lg shadow-sm p-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">{t("form.add_product")}</h2>
-        
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">
+          {t("form.add_product")}
+        </h2>
+
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Product Name */}
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="name"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               {t("form.product_name")} *
             </label>
             <input
@@ -168,7 +267,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
 
           {/* Language Selection */}
           <div>
-            <label htmlFor="language" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="language"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               {t("form.language")}
             </label>
             <select
@@ -185,7 +287,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
 
           {/* Category */}
           <div>
-            <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="category"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               {t("form.category")} *
             </label>
             <div className="flex gap-2">
@@ -211,7 +316,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
 
           {/* Description */}
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="description"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               {t("form.description")} *
             </label>
             <div className="space-y-2">
@@ -246,7 +354,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
           {/* Price and Stock */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="price" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="price"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 {t("form.price")} *
               </label>
               <input
@@ -263,7 +374,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
               />
             </div>
             <div>
-              <label htmlFor="stockLevel" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="stockLevel"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 {t("form.stock_level")}
               </label>
               <input
@@ -278,7 +392,10 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
               />
             </div>
             <div>
-              <label htmlFor="minStockLevel" className="block text-sm font-medium text-gray-700 mb-2">
+              <label
+                htmlFor="minStockLevel"
+                className="block text-sm font-medium text-gray-700 mb-2"
+              >
                 {t("form.min_stock")}
               </label>
               <input
@@ -294,43 +411,125 @@ export function ProductForm({ onSuccess }: ProductFormProps) {
             </div>
           </div>
 
-          {/* Image Upload */}
+          {/* Image Upload + Live Feed + Capture */}
           <div>
-            <label htmlFor="image" className="block text-sm font-medium text-gray-700 mb-2">
+            <label
+              htmlFor="image"
+              className="block text-sm font-medium text-gray-700 mb-2"
+            >
               {t("form.product_image")}
             </label>
+
+            {/* Hidden file input */}
             <input
               type="file"
               id="image"
               accept="image/*"
+              capture="environment"
               onChange={handleImageChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="hidden"
+              disabled={!!capturedPhoto}
             />
-            {imageFile && (
-              <div className="mt-2">
-                <img
-                  src={URL.createObjectURL(imageFile)}
-                  alt="Preview"
-                  className="w-32 h-32 object-cover rounded-lg"
+
+            {/* Styled button as label */}
+            <label
+              htmlFor="image"
+              className={`inline-block cursor-pointer px-6 py-2 rounded-lg transition-colors select-none ${capturedPhoto
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                }`}
+            >
+              {t("form.choose_file")}
+            </label>
+
+            {/* Take Photo button */}
+            {!stream && !capturedPhoto && !imageFile && (
+              <button
+                type="button"
+                onClick={startCamera}
+                className="ml-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                {t("form.take_photo")}
+              </button>
+            )}
+
+            {/* Video Preview and Capture Buttons */}
+            {stream && !capturedPhoto && (
+              <div className="mt-4 w-80 h-80 border border-gray-300 rounded-lg overflow-hidden bg-gray-50 flex flex-col items-center justify-center relative">
+                <video
+                  ref={videoRef}
+                  className="object-contain w-full h-full bg-black"
+                  muted
+                  playsInline
+                  autoPlay
                 />
+                <button
+                  type="button"
+                  onClick={capturePhoto}
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 px-6 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors"
+                >
+                  {t("form.capture")}
+                </button>
+                <button
+                  type="button"
+                  onClick={stopStream}
+                  className="absolute top-2 right-2 px-2 py-1 bg-gray-300 rounded hover:bg-gray-400 transition-colors"
+                  aria-label={t("form.cancel_camera")}
+                >
+                  ✕
+                </button>
               </div>
             )}
+
+            {/* Show Captured Photo Preview */}
+            {capturedPhoto && (
+              <div className="mt-4 relative w-80 h-80 border border-gray-300 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
+                <img
+                  src={capturedPhoto}
+                  alt="Captured preview"
+                  className="object-contain max-w-full max-h-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCapturedPhoto(null);
+                    startCamera();
+                  }}
+                  className="absolute top-2 right-2 px-2 py-1 bg-gray-300 rounded hover:bg-gray-400 transition-colors"
+                  aria-label={t("form.retake_photo")}
+                >
+                  ↻
+                </button>
+              </div>
+            )}
+
+            {/* Show uploaded image preview */}
+            {!capturedPhoto && imageFile && (
+              <div className="mt-4 relative w-80 h-80 border border-gray-300 rounded-lg overflow-hidden bg-gray-50 flex items-center justify-center">
+                <img
+                  src={URL.createObjectURL(imageFile)}
+                  alt="Selected file preview"
+                  className="object-contain max-w-full max-h-full"
+                />
+                <button
+                  type="button"
+                  onClick={() => setImageFile(null)}
+                  className="absolute top-2 right-2 px-2 py-1 bg-gray-300 rounded hover:bg-gray-400 transition-colors"
+                  aria-label={t("form.remove_image")}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isLoading}
             className="w-full px-6 py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isLoading ? (
-              <span className="flex items-center justify-center gap-2">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                {t("form.creating")}
-              </span>
-            ) : (
-              t("form.create_product")
-            )}
+            {isLoading ? t("form.saving") : t("form.save_product")}
           </button>
         </form>
       </div>
