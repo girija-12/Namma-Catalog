@@ -51,7 +51,7 @@ Our solution uses agentic AI to provide a **bilingual assistant (Tamil + English
 
 ## 📸 Screenshots
 
-Screenshots of the application are available in the [`/screenshots`]([./screenshots](https://github.com/girija-12/Namma-Catalog/tree/main/Screenshots)) folder.  
+Screenshots of the application are available in the `/screenshots` folder.  
 Please refer to that directory to view the UI and workflow of NammaCatalog in action.
 
 ---
