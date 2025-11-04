@@ -2,6 +2,8 @@
 
 **NammaCatalog** is a multilingual, web-based AI agent designed to assist farmers, artisans, and kirana store owners in creating and managing digital product catalogs using voice, text, or image inputs. This project was developed as part of **Hackfinity 2025**, the world’s first prompt-only hackathon focused on agentic AI.
 
+**Live Demo** 👉 [Visit NammaCatalog](https://namma-catalog.netlify.app/)
+
 ## 🚀 Project Overview
 
 During a 24-hour hackathon at SIMATS Engineering, Chennai (15–16 July 2025), our team built **NammaCatalog** to solve the real-world challenge of enabling small-scale sellers with low digital literacy to maintain structured online catalogs.
